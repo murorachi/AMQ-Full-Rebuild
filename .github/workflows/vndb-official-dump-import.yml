@@ -1,0 +1,50 @@
+name: Official VNDB Database Dump Import
+
+on:
+  push:
+    branches:
+      - automation/vndb-native-import-20261114
+    paths:
+      - vndb-import/dump-trigger.json
+
+permissions:
+  contents: read
+
+jobs:
+  import-official-vndb-dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out the isolated automation branch
+        uses: actions/checkout@v4
+
+      - name: Download current official VNDB database dump
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vndb-dump
+          curl --fail --location --show-error --retry 4 --retry-delay 10 \
+            https://dl.vndb.org/dump/vndb-db-latest.tar.zst \
+            --output /tmp/vndb-db-latest.tar.zst
+          echo "Downloaded archive bytes:"
+          stat -c '%s' /tmp/vndb-db-latest.tar.zst
+          sha256sum /tmp/vndb-db-latest.tar.zst
+          tar --use-compress-program=zstd -xf /tmp/vndb-db-latest.tar.zst -C /tmp/vndb-dump
+          echo "Dump timestamp:"
+          find /tmp/vndb-dump -maxdepth 3 -name TIMESTAMP -type f -print -exec cat {} \;
+          echo "Required table headers:"
+          find /tmp/vndb-dump -maxdepth 3 \( -name 'chars.header' -o -name 'chars_vns.header' -o -name 'images.header' \) -type f -print -exec cat {} \;
+
+      - name: Extract exact EMQ VNDB characters and appearances from public dump
+        run: python3 vndb-import/import-from-official-dump.py --dump-root /tmp/vndb-dump --bitmap vndb-import/ids.bitmap.gz.b64 --out vndb-import/dump-out
+
+      - name: Upload official VNDB export and source metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vndb-official-dump-character-export
+          path: |
+            vndb-import/dump-out/
+            /tmp/vndb-db-latest.tar.zst
+          if-no-files-found: warn
+          retention-days: 7
