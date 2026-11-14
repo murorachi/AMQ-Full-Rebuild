@@ -43,8 +43,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: vndb-official-dump-character-export
-          path: |
-            vndb-import/dump-out/
-            /tmp/vndb-db-latest.tar.zst
+          path: vndb-import/dump-out/
           if-no-files-found: warn
           retention-days: 7
