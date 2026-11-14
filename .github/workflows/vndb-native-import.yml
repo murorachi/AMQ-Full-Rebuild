@@ -1,0 +1,36 @@
+name: Temporary VNDB Native Character Import
+
+on:
+  push:
+    branches:
+      - automation/vndb-native-import-20261114
+    paths:
+      - vndb-import/trigger.json
+
+permissions:
+  contents: read
+
+jobs:
+  import-vndb-characters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out the isolated automation branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Import exact VNDB characters through the official Kana API
+        run: node vndb-import/import-vndb-native-characters.mjs
+
+      - name: Upload complete or resumable import evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vndb-native-character-export
+          path: vndb-import/out/
+          if-no-files-found: warn
+          retention-days: 7
