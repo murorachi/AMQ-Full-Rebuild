@@ -1,0 +1,6 @@
+{
+  "runId": "amq-native-vndb-2026-11-14",
+  "expectedVndbWorks": 7200,
+  "source": "official VNDB Kana API v2",
+  "triggeredAt": "2026-11-14T20:23:00+08:00"
+}
