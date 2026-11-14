@@ -1,0 +1,93 @@
+name: VNDB Character Image CDN Probe
+
+on:
+  push:
+    branches:
+      - automation/vndb-native-import-20261114
+    paths:
+      - vndb-import/image-probe-trigger.json
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out isolated probe input
+        uses: actions/checkout@v4
+
+      - name: Probe representative official VNDB image URLs
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const input = JSON.parse(fs.readFileSync('vndb-import/image-probe.json', 'utf8'));
+          const output = [];
+          let cursor = 0;
+          async function worker() {
+            while (cursor < input.urls.length) {
+              const index = cursor++;
+              const url = input.urls[index];
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 12000);
+              try {
+                const response = await fetch(url, {
+                  method: 'GET',
+                  headers: {
+                    range: 'bytes=0-0',
+                    accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                    referer: 'https://vndb.org/'
+                  },
+                  signal: controller.signal
+                });
+                const contentType = response.headers.get('content-type') || '';
+                const status = response.status;
+                await response.body?.cancel();
+                output[index] = {
+                  url,
+                  status,
+                  contentType,
+                  contentLength: response.headers.get('content-length'),
+                  ok: status >= 200 && status < 300 && contentType.toLowerCase().startsWith('image/')
+                };
+              } catch (error) {
+                output[index] = { url, ok: false, error: error.name + ': ' + error.message };
+              } finally {
+                clearTimeout(timer);
+              }
+            }
+          }
+          Promise.all(Array.from({ length: 6 }, worker)).then(() => {
+            const report = {
+              generatedAt: new Date().toISOString(),
+              source: 'catalog-data derived from VNDB official dump 2026-11-14',
+              catalogUniqueImages: input.catalogUniqueImages,
+              sampleCount: output.length,
+              successCount: output.filter(row => row.ok).length,
+              failureCount: output.filter(row => !row.ok).length,
+              results: output
+            };
+            fs.writeFileSync('vndb-import/image-probe-results.json', JSON.stringify(report, null, 2) + '\n');
+            console.log(JSON.stringify({
+              catalogUniqueImages: report.catalogUniqueImages,
+              sampleCount: report.sampleCount,
+              successCount: report.successCount,
+              failureCount: report.failureCount
+            }, null, 2));
+            if (report.failureCount) process.exitCode = 1;
+          }).catch(error => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
+
+      - name: Upload CDN probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vndb-character-image-cdn-probe
+          path: vndb-import/image-probe-results.json
+          if-no-files-found: warn
+          retention-days: 7
